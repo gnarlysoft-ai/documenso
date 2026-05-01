@@ -9,30 +9,35 @@ const loadCertificates = async (
   vaultUrl: string,
   credentials: { tenantId?: string; clientId?: string; clientSecret?: string },
 ): Promise<Uint8Array[]> => {
+  const certContents = env('NEXT_PRIVATE_SIGNING_AZURE_KV_PUBLIC_CRT_FILE_CONTENTS');
+  const certFilePath = env('NEXT_PRIVATE_SIGNING_AZURE_KV_PUBLIC_CRT_FILE_PATH');
   const chainContents = env('NEXT_PRIVATE_SIGNING_AZURE_KV_CERT_CHAIN_CONTENTS');
   const chainFilePath = env('NEXT_PRIVATE_SIGNING_AZURE_KV_CERT_CHAIN_FILE_PATH');
 
-  if (chainContents) {
-    return parsePem(Buffer.from(chainContents, 'base64').toString('utf-8')).map(
-      (block) => block.der,
-    );
-  }
+  const readPemBlocks = (input: string): Uint8Array[] => parsePem(input).map((block) => block.der);
 
-  if (chainFilePath) {
-    return parsePem(fs.readFileSync(chainFilePath).toString('utf-8')).map((block) => block.der);
-  }
+  if (certContents || certFilePath) {
+    const leafPem = certContents
+      ? Buffer.from(certContents, 'base64').toString('utf-8')
+      : fs.readFileSync(certFilePath as string).toString('utf-8');
+    const leafBlocks = readPemBlocks(leafPem);
 
-  const certContents = env('NEXT_PRIVATE_SIGNING_AZURE_KV_PUBLIC_CRT_FILE_CONTENTS');
-  const certFilePath = env('NEXT_PRIVATE_SIGNING_AZURE_KV_PUBLIC_CRT_FILE_PATH');
+    if (leafBlocks.length === 0) {
+      throw new Error('NEXT_PRIVATE_SIGNING_AZURE_KV_PUBLIC_CRT_FILE_CONTENTS is empty');
+    }
 
-  if (certContents) {
-    return parsePem(Buffer.from(certContents, 'base64').toString('utf-8')).map(
-      (block) => block.der,
-    );
-  }
+    const chainBlocks: Uint8Array[] = [];
 
-  if (certFilePath) {
-    return parsePem(fs.readFileSync(certFilePath).toString('utf-8')).map((block) => block.der);
+    if (chainContents) {
+      chainBlocks.push(...readPemBlocks(Buffer.from(chainContents, 'base64').toString('utf-8')));
+    } else if (chainFilePath) {
+      chainBlocks.push(...readPemBlocks(fs.readFileSync(chainFilePath).toString('utf-8')));
+    }
+
+    // If a single bundle was pasted into PUBLIC_CRT_FILE_CONTENTS, leafBlocks already
+    // contains [leaf, ...chain] — pass it through. Otherwise leafBlocks is just [leaf]
+    // and we append the explicit chain.
+    return leafBlocks.length > 1 ? leafBlocks : [leafBlocks[0], ...chainBlocks];
   }
 
   // Last-resort: Azure Key Vault Certificates / Secrets API, living in the same vault.
