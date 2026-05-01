@@ -171,6 +171,11 @@ const SIZING: Record<
   },
 };
 
+const SIGNING_TRANSPORTS: readonly SigningTransport[] = ['aws-kms', 'azure-kv'] as const;
+
+const isSigningTransport = (value: string): value is SigningTransport =>
+  (SIGNING_TRANSPORTS as readonly string[]).includes(value);
+
 /**
  * Build the internal-mode configuration from environment variables. Throws
  * if any required variable is missing.
@@ -180,6 +185,27 @@ export function getInternalConfig(envName: string): EnvironmentConfig {
   if (!sizing) {
     throw new Error(`Unknown environment: ${envName}. Valid: ${Object.keys(SIZING).join(', ')}`);
   }
+
+  const signingTransportRaw = optionalEnv('SIGNING_TRANSPORT', 'aws-kms');
+
+  if (!isSigningTransport(signingTransportRaw)) {
+    throw new Error(
+      `Invalid SIGNING_TRANSPORT: ${signingTransportRaw}. ` +
+        `Valid: ${SIGNING_TRANSPORTS.join(', ')}`,
+    );
+  }
+
+  const signingTransport: SigningTransport = signingTransportRaw;
+
+  // When transport=azure-kv, URL + key name are mandatory; without them the
+  // signer would fail at request time with an opaque error from inside ECS.
+  // Fail fast at config load so the misconfig surfaces in `cdk deploy` output.
+  const azureKvUrl =
+    signingTransport === 'azure-kv' ? requireEnv('AZURE_KV_URL') : optionalEnv('AZURE_KV_URL');
+  const azureKvKeyName =
+    signingTransport === 'azure-kv'
+      ? requireEnv('AZURE_KV_KEY_NAME')
+      : optionalEnv('AZURE_KV_KEY_NAME');
 
   return {
     mode: 'internal',
@@ -201,9 +227,9 @@ export function getInternalConfig(envName: string): EnvironmentConfig {
     appConfigSecretArn: requireEnv('APP_CONFIG_SECRET_ARN'),
     databaseUrlSecretArn: requireEnv('DATABASE_URL_SECRET_ARN'),
     uploadsBucketName: optionalEnv('UPLOADS_BUCKET_NAME', `documenso-uploads-${envName}`),
-    signingTransport: optionalEnv('SIGNING_TRANSPORT', 'aws-kms') as SigningTransport,
-    azureKvUrl: optionalEnv('AZURE_KV_URL'),
-    azureKvKeyName: optionalEnv('AZURE_KV_KEY_NAME'),
+    signingTransport,
+    azureKvUrl,
+    azureKvKeyName,
     azureKvKeyVersion: optionalEnv('AZURE_KV_KEY_VERSION'),
     ...sizing,
   };

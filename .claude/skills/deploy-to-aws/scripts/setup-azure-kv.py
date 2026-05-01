@@ -29,9 +29,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import secrets
+import shlex
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -139,12 +140,31 @@ def ensure_key_vault(
 def ensure_signing_key(
     data_token: str, vault_url: str, key_name: str
 ) -> dict[str, Any]:
-    """Create an RSA-HSM 3072-bit non-exportable sign-only key via the data plane."""
-    url = f"{vault_url}/keys/{key_name}/create?api-version=7.4"
+    """Create or reuse an RSA-HSM 3072-bit non-exportable sign-only key.
+
+    The /keys/{name}/create endpoint is NOT idempotent — calling it twice
+    creates a NEW version of the key, leaving any previously-issued cert
+    bound to the old (now stale) public key. So we GET first and only POST
+    if the key doesn't exist yet.
+    """
     headers = {
         "Authorization": f"Bearer {data_token}",
         "Content-Type": "application/json",
     }
+
+    get_url = f"{vault_url}/keys/{key_name}?api-version=7.4"
+    existing = requests.get(get_url, headers=headers, timeout=60)
+
+    if existing.status_code == 200:
+        print(f"  signing key: {key_name} (already exists, reusing)")
+        return existing.json()
+
+    if existing.status_code != 404:
+        raise RuntimeError(
+            f"Key probe failed: {existing.status_code} {existing.text[:500]}"
+        )
+
+    create_url = f"{vault_url}/keys/{key_name}/create?api-version=7.4"
     body = {
         "kty": "RSA-HSM",
         "key_size": 3072,
@@ -152,11 +172,22 @@ def ensure_signing_key(
         "attributes": {"enabled": True, "exportable": False},
     }
 
-    response = requests.post(url, headers=headers, json=body, timeout=60)
+    response = requests.post(create_url, headers=headers, json=body, timeout=60)
     if not response.ok:
         raise RuntimeError(f"Key create failed: {response.status_code} {response.text[:500]}")
 
     print(f"  signing key: {key_name} (RSA-HSM 3072, non-exportable)")
+    return response.json()
+
+
+def _graph_json(response: requests.Response, action: str) -> dict[str, Any]:
+    """Return parsed JSON from a Graph response, raising with the response body
+    if the call wasn't 2xx (so 401/403/500 surface as clear errors instead of
+    KeyError on a missing field)."""
+    if not response.ok:
+        raise RuntimeError(
+            f"Graph API {action} failed: {response.status_code} {response.text[:500]}"
+        )
     return response.json()
 
 
@@ -169,45 +200,57 @@ def create_service_principal(
     """
     list_url = f"https://graph.microsoft.com/v1.0/applications?$filter=displayName eq '{display_name}'"
     headers = {"Authorization": f"Bearer {graph_token}"}
-    existing = requests.get(list_url, headers=headers, timeout=60).json()
+    existing = _graph_json(requests.get(list_url, headers=headers, timeout=60), "list applications")
 
     if existing.get("value"):
         app = existing["value"][0]
     else:
         create_url = "https://graph.microsoft.com/v1.0/applications"
-        app = requests.post(
-            create_url,
-            headers={**headers, "Content-Type": "application/json"},
-            json={"displayName": display_name, "signInAudience": "AzureADMyOrg"},
-            timeout=60,
-        ).json()
+        app = _graph_json(
+            requests.post(
+                create_url,
+                headers={**headers, "Content-Type": "application/json"},
+                json={"displayName": display_name, "signInAudience": "AzureADMyOrg"},
+                timeout=60,
+            ),
+            "create application",
+        )
 
     app_id = app["appId"]
 
-    sp_list = requests.get(
-        f"https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '{app_id}'",
-        headers=headers,
-        timeout=60,
-    ).json()
+    sp_list = _graph_json(
+        requests.get(
+            f"https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '{app_id}'",
+            headers=headers,
+            timeout=60,
+        ),
+        "list service principals",
+    )
     if sp_list.get("value"):
         sp = sp_list["value"][0]
     else:
-        sp = requests.post(
-            "https://graph.microsoft.com/v1.0/servicePrincipals",
-            headers={**headers, "Content-Type": "application/json"},
-            json={"appId": app_id},
-            timeout=60,
-        ).json()
+        sp = _graph_json(
+            requests.post(
+                "https://graph.microsoft.com/v1.0/servicePrincipals",
+                headers={**headers, "Content-Type": "application/json"},
+                json={"appId": app_id},
+                timeout=60,
+            ),
+            "create service principal",
+        )
 
-    secret_response = requests.post(
-        f"https://graph.microsoft.com/v1.0/applications/{app['id']}/addPassword",
-        headers={**headers, "Content-Type": "application/json"},
-        json={"passwordCredential": {"displayName": f"documenso-{int(time.time())}"}},
-        timeout=60,
-    ).json()
+    secret_response = _graph_json(
+        requests.post(
+            f"https://graph.microsoft.com/v1.0/applications/{app['id']}/addPassword",
+            headers={**headers, "Content-Type": "application/json"},
+            json={"passwordCredential": {"displayName": f"documenso-{int(time.time())}"}},
+            timeout=60,
+        ),
+        "add password",
+    )
 
     if "secretText" not in secret_response:
-        raise RuntimeError(f"Password creation failed: {secret_response}")
+        raise RuntimeError(f"Password creation returned no secretText: {secret_response}")
 
     print(f"  service principal: {display_name} (appId={app_id})")
     return app_id, sp["id"], secret_response["secretText"]
@@ -216,9 +259,14 @@ def create_service_principal(
 def assign_kv_crypto_user_role(
     mgmt_token: str, vault_resource_id: str, key_name: str, sp_object_id: str
 ) -> None:
-    """Assign 'Key Vault Crypto User' role scoped to the one key."""
+    """Assign 'Key Vault Crypto User' role scoped to the one key.
+
+    Azure requires the role assignment name to be a GUID in 8-4-4-4-12
+    format. uuid.uuid4() produces exactly that; secrets.token_hex(16) does
+    not (it's a flat 32-char hex string) and would fail validation.
+    """
     scope = f"{vault_resource_id}/keys/{key_name}"
-    role_assignment_id = secrets.token_hex(16)
+    role_assignment_id = str(uuid.uuid4())
     path = f"{scope}/providers/Microsoft.Authorization/roleAssignments/{role_assignment_id}"
 
     role_def_id = (
@@ -238,17 +286,32 @@ def assign_kv_crypto_user_role(
 
 
 def append_env(env_path: Path, mapping: dict[str, str]) -> None:
-    """Append/update key=value pairs in a dotenv file without touching other keys."""
+    """Append/update key=value pairs in a dotenv file without touching other keys.
+
+    Values are shell-quoted on write (`shlex.quote`) so `source .deploy.env`
+    is safe even when values contain `$`, spaces, backticks, or `$(...)` —
+    things Azure SP secrets routinely include.
+
+    Existing values are un-quoted (`shlex.split`) before storing so they
+    aren't double-quoted on a subsequent run.
+    """
     existing: dict[str, str] = {}
     if env_path.exists():
         for line in env_path.read_text().splitlines():
             if "=" in line and not line.lstrip().startswith("#"):
                 key, _, value = line.partition("=")
-                existing[key.strip()] = value
+                raw = value.strip()
+                try:
+                    parsed = shlex.split(raw, posix=True)
+                    existing[key.strip()] = parsed[0] if parsed else ""
+                except ValueError:
+                    # Mismatched quotes etc. — keep raw so we don't lose data,
+                    # and downstream shlex.quote will escape it on write.
+                    existing[key.strip()] = raw
 
     existing.update(mapping)
 
-    lines = [f"{k}={v}" for k, v in existing.items()]
+    lines = [f"{k}={shlex.quote(v)}" for k, v in existing.items()]
     env_path.write_text("\n".join(lines) + "\n")
 
 

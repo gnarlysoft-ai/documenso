@@ -44,7 +44,13 @@ export class DocumensoStack extends cdk.Stack {
     const secrets = new Secrets(this, 'Secrets', { config });
 
     // -- KMS signing key (for PDF signatures) -----------------------------
-    const signingKms = new SigningKms(this, 'SigningKms', { config });
+    // Only created when transport === 'aws-kms'. azure-kv deploys hold their
+    // signing key in Azure Key Vault; provisioning a KMS key on the AWS side
+    // would be ~$1/mo of dead infrastructure.
+    const signingKms =
+      config.signingTransport === 'aws-kms'
+        ? new SigningKms(this, 'SigningKms', { config })
+        : undefined;
 
     // -- Compute (ECS Fargate service + S3 bucket) ------------------------
     new Compute(this, 'Compute', {
@@ -58,7 +64,7 @@ export class DocumensoStack extends cdk.Stack {
       dbInstance: database.instance,
       appConfigSecret: secrets.appConfig,
       databaseUrlSecret: secrets.databaseUrl,
-      signingKey: signingKms.key,
+      signingKey: signingKms?.key,
       repo: registry.repo,
       targetGroup: networking.appTargetGroup,
     });

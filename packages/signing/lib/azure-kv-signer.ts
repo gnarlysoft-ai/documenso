@@ -91,6 +91,28 @@ const isRsaPss = (algorithm: string): boolean => algorithm.startsWith('PS');
 const isEcdsa = (algorithm: string): boolean => algorithm.startsWith('ES');
 
 /**
+ * Encode an ASN.1 length using short-form (single byte) for lengths < 128 and
+ * long-form (0x80 | n + n big-endian bytes) for larger lengths.
+ *
+ * Required for ES512/P-521 signatures where the SEQUENCE exceeds 127 bytes.
+ */
+const encodeAsn1Length = (length: number): Uint8Array => {
+  if (length < 0x80) {
+    return new Uint8Array([length]);
+  }
+
+  const bytes: number[] = [];
+  let value = length;
+
+  while (value > 0) {
+    bytes.unshift(value & 0xff);
+    value >>= 8;
+  }
+
+  return new Uint8Array([0x80 | bytes.length, ...bytes]);
+};
+
+/**
  * Convert an Azure-format ECDSA signature (R||S concatenation) to the DER-encoded
  * SEQUENCE { INTEGER r, INTEGER s } format expected by @libpdf/core.
  *
@@ -117,14 +139,14 @@ const ecdsaRawToDer = (raw: Uint8Array): Uint8Array => {
     const needsPad = (trimmed[0] & 0x80) !== 0;
     const body = needsPad ? new Uint8Array([0, ...trimmed]) : trimmed;
 
-    return new Uint8Array([0x02, body.length, ...body]);
+    return new Uint8Array([0x02, ...encodeAsn1Length(body.length), ...body]);
   };
 
   const rEncoded = encodeInteger(r);
   const sEncoded = encodeInteger(s);
   const content = new Uint8Array([...rEncoded, ...sEncoded]);
 
-  return new Uint8Array([0x30, content.length, ...content]);
+  return new Uint8Array([0x30, ...encodeAsn1Length(content.length), ...content]);
 };
 
 type AzureKvCredentials = {
@@ -282,9 +304,15 @@ export class AzureKvSigner implements Signer {
   /**
    * Load a PEM-encoded certificate (and optional chain) from Azure Key Vault.
    *
-   * Tries the Certificates API first (the natural home for CA-issued certs
-   * after a CSR merge), falls back to the Secrets API (for manually-stored
-   * base64 PEM blobs).
+   * Tries the Secrets API first because it returns the full PEM bundle
+   * (leaf + chain) for KV-managed certificates. Falls back to the Certificates
+   * API (which only exposes the leaf via `cer`) if the Secrets API path is
+   * unavailable — e.g. when the SP only has the `Key Vault Certificate User`
+   * role and not `Key Vault Secrets User`.
+   *
+   * On total failure, the thrown error includes the underlying messages from
+   * both API attempts so an operator can tell whether it's an RBAC issue on
+   * one side or a missing object on the other.
    */
   static async getCertificateFromVault(
     vaultUrl: string,
@@ -292,53 +320,64 @@ export class AzureKvSigner implements Signer {
     options?: { credentials?: AzureKvCredentials; secretName?: string },
   ): Promise<{ cert: Uint8Array; chain?: Uint8Array[] }> {
     const credential = buildCredential(options?.credentials ?? {});
+    const secretName = options?.secretName ?? certName;
 
-    const certClient = new CertificateClient(vaultUrl, credential);
-
+    let secretsError: unknown;
     try {
+      const secretClient = new SecretClient(vaultUrl, credential);
+      const secret = await secretClient.getSecret(secretName);
+
+      if (secret.value) {
+        const blocks = parsePem(secret.value);
+
+        if (blocks.length > 0) {
+          const [first, ...rest] = blocks;
+
+          return {
+            cert: first.der,
+            chain: rest.length > 0 ? rest.map((block) => block.der) : undefined,
+          };
+        }
+      }
+    } catch (error) {
+      secretsError = error;
+    }
+
+    let certificatesError: unknown;
+    try {
+      const certClient = new CertificateClient(vaultUrl, credential);
       const cert = await certClient.getCertificate(certName);
 
       if (cert.cer) {
+        // Leaf only — no chain available via this API path.
         return { cert: new Uint8Array(cert.cer) };
       }
     } catch (error) {
-      // Fall through to Secrets API.
+      certificatesError = error;
     }
 
-    const secretClient = new SecretClient(vaultUrl, credential);
-    const secretName = options?.secretName ?? certName;
+    const messages: string[] = [];
 
-    let secret;
-
-    try {
-      secret = await secretClient.getSecret(secretName);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-
-      throw new KmsSignerError(
-        `Failed to fetch certificate from Azure Key Vault (${vaultUrl}, ${certName}): ${message}`,
-        error instanceof Error ? error : undefined,
-      );
+    if (secretsError) {
+      const message = secretsError instanceof Error ? secretsError.message : String(secretsError);
+      messages.push(`secrets API: ${message}`);
     }
 
-    if (!secret.value) {
-      throw new KmsSignerError(`Azure Key Vault secret ${secretName} is empty`);
+    if (certificatesError) {
+      const message =
+        certificatesError instanceof Error ? certificatesError.message : String(certificatesError);
+      messages.push(`certificates API: ${message}`);
     }
 
-    const blocks = parsePem(secret.value);
-
-    if (blocks.length === 0) {
-      throw new KmsSignerError(
-        `Azure Key Vault secret ${secretName} does not contain a PEM certificate`,
-      );
-    }
-
-    const [first, ...rest] = blocks;
-
-    return {
-      cert: first.der,
-      chain: rest.length > 0 ? rest.map((block) => block.der) : undefined,
-    };
+    throw new KmsSignerError(
+      `Failed to fetch certificate from Azure Key Vault (${vaultUrl}, ${certName}). ` +
+        (messages.length > 0 ? messages.join('; ') : 'Both APIs returned empty results.'),
+      secretsError instanceof Error
+        ? secretsError
+        : certificatesError instanceof Error
+          ? certificatesError
+          : undefined,
+    );
   }
 
   /**
