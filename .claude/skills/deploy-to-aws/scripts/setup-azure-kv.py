@@ -30,6 +30,7 @@ import argparse
 import json
 import os
 import secrets
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -139,12 +140,31 @@ def ensure_key_vault(
 def ensure_signing_key(
     data_token: str, vault_url: str, key_name: str
 ) -> dict[str, Any]:
-    """Create an RSA-HSM 3072-bit non-exportable sign-only key via the data plane."""
-    url = f"{vault_url}/keys/{key_name}/create?api-version=7.4"
+    """Create or reuse an RSA-HSM 3072-bit non-exportable sign-only key.
+
+    The /keys/{name}/create endpoint is NOT idempotent — calling it twice
+    creates a NEW version of the key, leaving any previously-issued cert
+    bound to the old (now stale) public key. So we GET first and only POST
+    if the key doesn't exist yet.
+    """
     headers = {
         "Authorization": f"Bearer {data_token}",
         "Content-Type": "application/json",
     }
+
+    get_url = f"{vault_url}/keys/{key_name}?api-version=7.4"
+    existing = requests.get(get_url, headers=headers, timeout=60)
+
+    if existing.status_code == 200:
+        print(f"  signing key: {key_name} (already exists, reusing)")
+        return existing.json()
+
+    if existing.status_code != 404:
+        raise RuntimeError(
+            f"Key probe failed: {existing.status_code} {existing.text[:500]}"
+        )
+
+    create_url = f"{vault_url}/keys/{key_name}/create?api-version=7.4"
     body = {
         "kty": "RSA-HSM",
         "key_size": 3072,
@@ -152,7 +172,7 @@ def ensure_signing_key(
         "attributes": {"enabled": True, "exportable": False},
     }
 
-    response = requests.post(url, headers=headers, json=body, timeout=60)
+    response = requests.post(create_url, headers=headers, json=body, timeout=60)
     if not response.ok:
         raise RuntimeError(f"Key create failed: {response.status_code} {response.text[:500]}")
 
@@ -238,7 +258,11 @@ def assign_kv_crypto_user_role(
 
 
 def append_env(env_path: Path, mapping: dict[str, str]) -> None:
-    """Append/update key=value pairs in a dotenv file without touching other keys."""
+    """Append/update key=value pairs in a dotenv file without touching other keys.
+
+    Values are shell-quoted so `source .deploy.env` is safe even when values
+    contain `$`, spaces, backticks, or `$(...)` (which Azure SP secrets routinely do).
+    """
     existing: dict[str, str] = {}
     if env_path.exists():
         for line in env_path.read_text().splitlines():
@@ -248,7 +272,7 @@ def append_env(env_path: Path, mapping: dict[str, str]) -> None:
 
     existing.update(mapping)
 
-    lines = [f"{k}={v}" for k, v in existing.items()]
+    lines = [f"{k}={shlex.quote(v)}" for k, v in existing.items()]
     env_path.write_text("\n".join(lines) + "\n")
 
 

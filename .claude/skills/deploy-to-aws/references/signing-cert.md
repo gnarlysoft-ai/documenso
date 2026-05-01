@@ -2,9 +2,9 @@
 
 > ## ⚠️ READ THIS FIRST
 >
-> **Self-signed signatures are NOT legally binding.** PDFs signed with a self-signed cert show in Adobe Reader as *"Signature valid. Signer's identity is UNKNOWN."* Counterparties, courts, and auditors treat "identity unknown" as not legally binding.
+> **Self-signed signatures show as "identity unknown" in Adobe Reader.** PDFs signed with a self-signed cert display in Adobe Reader as *"Signature valid. Signer's identity is UNKNOWN."* Many counterparties — and many internal compliance/legal teams — won't accept signatures with that warning even if the math checks out. Whether a self-signed signature is enforceable in a given jurisdiction is a question for your counsel, not this runbook.
 >
-> **For real contracts, you need an AATL cert.** See the [AATL attestation matrix](#aatl-attestation-matrix) below to pick a path — the short version is **Azure Key Vault Premium is the cheapest working option (~$850 year 1, ~$350/yr after).**
+> **For high-assurance signing (B2B contracts, regulated workflows), use an AATL cert.** Adobe trusts AATL-rooted signatures by default and displays the signer's identity. See the [AATL attestation matrix](#aatl-attestation-matrix) below to pick a path — the short version is **Azure Key Vault Premium is the cheapest working option (~$850 year 1, ~$350/yr after).** Confirm enforceability and audit requirements with legal/compliance for your jurisdiction.
 
 ---
 

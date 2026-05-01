@@ -155,7 +155,7 @@ The Azure SP creds in `documenso/<env>/app-config` are wrong or missing. Validat
 ```bash
 APP_CONFIG_ARN=$(aws cloudformation describe-stacks --profile "$AWS_PROFILE" --region "$AWS_REGION" \
   --stack-name "$STACK_NAME" \
-  --query "Stacks[0].Outputs[?OutputKey=='SecretsAppConfigSecretArn'].OutputValue" --output text)
+  --query "Stacks[0].Outputs[?contains(OutputKey, 'AppConfigSecretArn')].OutputValue | [0]" --output text)
 
 aws secretsmanager get-secret-value --profile "$AWS_PROFILE" --region "$AWS_REGION" \
   --secret-id "$APP_CONFIG_ARN" --query SecretString --output text | \

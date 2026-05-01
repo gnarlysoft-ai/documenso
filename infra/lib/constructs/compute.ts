@@ -24,7 +24,12 @@ export interface ComputeProps {
   readonly dbInstance?: rds.IDatabaseInstance;
   readonly appConfigSecret: secretsmanager.ISecret;
   readonly databaseUrlSecret: secretsmanager.ISecret;
-  readonly signingKey: kms.IKey;
+  /**
+   * KMS signing key. Required when `config.signingTransport === 'aws-kms'`,
+   * undefined otherwise — the construct that owns the key is created
+   * conditionally one layer up in `documenso-stack.ts`.
+   */
+  readonly signingKey?: kms.IKey;
   /** Used only in internal mode (when pulling from our ECR repo). */
   readonly repo?: ecr.IRepository;
   readonly targetGroup: elbv2.ApplicationTargetGroup;
@@ -43,6 +48,20 @@ export class Compute extends Construct {
 
     const { config } = props;
     const isInternal = config.mode === 'internal';
+    // In generic mode `signingTransport` is a CFN token, so we can't branch
+    // on its string value at synth time. Both transports' env vars + secrets
+    // are emitted in generic mode and the app picks one at runtime via
+    // NEXT_PRIVATE_SIGNING_TRANSPORT. In internal mode the value is a real
+    // string and we can prune the unused transport.
+    const includeAwsKms = !isInternal || config.signingTransport === 'aws-kms';
+    const includeAzureKv = !isInternal || config.signingTransport === 'azure-kv';
+
+    if (includeAwsKms && !props.signingKey) {
+      throw new Error(
+        'Compute requires `signingKey` when AWS KMS signing is active ' +
+          '(config.signingTransport === "aws-kms" or generic mode).',
+      );
+    }
 
     // -- S3 Bucket for document uploads -----------------------------------
 
@@ -101,14 +120,11 @@ export class Compute extends Construct {
       ? ecs.ContainerImage.fromEcrRepository(props.repo!, 'latest')
       : ecs.ContainerImage.fromRegistry(config.containerImage);
 
-    // -- Signing secrets: Azure entries are only wired into the task def when
-    // the active transport needs them. In internal mode we branch on the string
-    // `config.signingTransport`; in generic mode the azure-kv placeholder keys
-    // always exist in the freshly-created secret, so including them is safe.
-    const includeAzureKvSecrets = !isInternal || config.signingTransport === 'azure-kv';
-    const includeAwsKmsSecrets = !isInternal || config.signingTransport === 'aws-kms';
-
-    const azureKvSecrets: Record<string, ecs.Secret> = includeAzureKvSecrets
+    // -- Signing secrets: only the active transport's secret entries are wired
+    // into the task def. In generic mode both placeholder sets exist in the
+    // freshly-created secret, so including both is safe even when only one
+    // is read by the app.
+    const azureKvSecrets: Record<string, ecs.Secret> = includeAzureKv
       ? {
           NEXT_PRIVATE_SIGNING_AZURE_KV_TENANT_ID: ecs.Secret.fromSecretsManager(
             props.appConfigSecret,
@@ -133,7 +149,7 @@ export class Compute extends Construct {
         }
       : {};
 
-    const awsKmsSecrets: Record<string, ecs.Secret> = includeAwsKmsSecrets
+    const awsKmsSecrets: Record<string, ecs.Secret> = includeAwsKms
       ? {
           NEXT_PRIVATE_SIGNING_AWS_KMS_PUBLIC_CRT_FILE_CONTENTS: ecs.Secret.fromSecretsManager(
             props.appConfigSecret,
@@ -160,15 +176,23 @@ export class Compute extends Construct {
         NEXT_PRIVATE_SMTP_TRANSPORT: 'smtp-auth',
         NEXT_PRIVATE_SMTP_FROM_NAME: config.appName,
         NEXT_PRIVATE_SMTP_FROM_ADDRESS: config.smtpFromAddress,
-        // Signing — both transports' env vars are always present so the task
-        // def is stable across transport switches. The app picks based on
-        // NEXT_PRIVATE_SIGNING_TRANSPORT and ignores the other set.
+        // Signing — env vars only emitted for the active transport. In
+        // internal mode this prunes unused references; in generic mode both
+        // are emitted (signingTransport is a CFN token at synth time).
         NEXT_PRIVATE_SIGNING_TRANSPORT: config.signingTransport,
-        NEXT_PRIVATE_SIGNING_AWS_KMS_KEY_ID: props.signingKey.keyArn,
-        NEXT_PRIVATE_SIGNING_AWS_KMS_REGION: isInternal ? config.region : cdk.Aws.REGION,
-        NEXT_PRIVATE_SIGNING_AZURE_KV_URL: config.azureKvUrl,
-        NEXT_PRIVATE_SIGNING_AZURE_KV_KEY_NAME: config.azureKvKeyName,
-        NEXT_PRIVATE_SIGNING_AZURE_KV_KEY_VERSION: config.azureKvKeyVersion,
+        ...(includeAwsKms && props.signingKey
+          ? {
+              NEXT_PRIVATE_SIGNING_AWS_KMS_KEY_ID: props.signingKey.keyArn,
+              NEXT_PRIVATE_SIGNING_AWS_KMS_REGION: isInternal ? config.region : cdk.Aws.REGION,
+            }
+          : {}),
+        ...(includeAzureKv
+          ? {
+              NEXT_PRIVATE_SIGNING_AZURE_KV_URL: config.azureKvUrl,
+              NEXT_PRIVATE_SIGNING_AZURE_KV_KEY_NAME: config.azureKvKeyName,
+              NEXT_PRIVATE_SIGNING_AZURE_KV_KEY_VERSION: config.azureKvKeyVersion,
+            }
+          : {}),
         NEXT_PRIVATE_MICROSOFT_TENANT_ID: config.microsoftTenantId,
         NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS: config.allowedSignupDomains,
         NEXT_PRIVATE_JOBS_PROVIDER: 'local',
@@ -249,8 +273,12 @@ export class Compute extends Construct {
     uploadsBucket.grantReadWrite(taskDef.taskRole);
 
     // -- IAM: grant task role access to the KMS signing key ---------------
+    // Only when AWS KMS signing is active. Internal-mode azure-kv deploys
+    // skip both the construct and the grant entirely.
 
-    props.signingKey.grant(taskDef.taskRole, 'kms:Sign', 'kms:GetPublicKey');
+    if (includeAwsKms && props.signingKey) {
+      props.signingKey.grant(taskDef.taskRole, 'kms:Sign', 'kms:GetPublicKey');
+    }
 
     // -- Fargate Service --------------------------------------------------
 

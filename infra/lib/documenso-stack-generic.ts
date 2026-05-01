@@ -125,6 +125,26 @@ export class GenericDocumensoStack extends cdk.Stack {
         'Optional Azure Key Vault key version. Leave blank to always use the latest version.',
     });
 
+    // -- Validation: when SigningTransport=azure-kv, the Azure KV URL and key
+    // name must be non-empty. Without this, CFN would deploy successfully but
+    // the ECS tasks would crash on startup with an opaque error from inside
+    // the signer. Catch the misconfig at deploy time instead.
+    new cdk.CfnRule(this, 'RequireAzureKvParamsWhenAzureKvTransport', {
+      ruleCondition: cdk.Fn.conditionEquals(signingTransport.valueAsString, 'azure-kv'),
+      assertions: [
+        {
+          assert: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(azureKvUrl.valueAsString, '')),
+          assertDescription:
+            'AzureKvUrl is required when SigningTransport is azure-kv ' +
+            "(e.g. 'https://my-vault.vault.azure.net').",
+        },
+        {
+          assert: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(azureKvKeyName.valueAsString, '')),
+          assertDescription: 'AzureKvKeyName is required when SigningTransport is azure-kv.',
+        },
+      ],
+    });
+
     // -- Sizing -----------------------------------------------------------
 
     const dbInstanceClass = new cdk.CfnParameter(this, 'DbInstanceClass', {
