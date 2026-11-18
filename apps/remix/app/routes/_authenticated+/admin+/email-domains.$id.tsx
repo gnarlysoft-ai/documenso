@@ -28,9 +28,13 @@ import type { DataTableColumnDef } from '@documenso/ui/primitives/data-table';
 import { DataTable } from '@documenso/ui/primitives/data-table';
 import { useToast } from '@documenso/ui/primitives/use-toast';
 
+import { requireAdmin } from '~/utils/require-admin.server';
+
 import type { Route } from './+types/email-domains.$id';
 
-export function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
+  await requireAdmin(request);
+
   const id = params.id;
 
   if (!id) {

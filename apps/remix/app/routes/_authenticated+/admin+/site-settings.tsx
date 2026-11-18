@@ -28,6 +28,7 @@ import { Textarea } from '@documenso/ui/primitives/textarea';
 import { useToast } from '@documenso/ui/primitives/use-toast';
 
 import { SettingsHeader } from '~/components/general/settings-header';
+import { requireAdmin } from '~/utils/require-admin.server';
 
 import type { Route } from './+types/site-settings';
 
@@ -35,7 +36,9 @@ const ZBannerFormSchema = ZSiteSettingsBannerSchema;
 
 type TBannerFormSchema = z.infer<typeof ZBannerFormSchema>;
 
-export async function loader() {
+export async function loader({ request }: Route.LoaderArgs) {
+  await requireAdmin(request);
+
   const banner = await getSiteSettings().then((settings) =>
     settings.find((setting) => setting.id === SITE_SETTINGS_BANNER_ID),
   );

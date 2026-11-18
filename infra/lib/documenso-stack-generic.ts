@@ -83,6 +83,28 @@ export class GenericDocumensoStack extends cdk.Stack {
         "Microsoft/Entra tenant ID (or 'common' for multi-tenant). Used only if Microsoft SSO is configured.",
     });
 
+    const disableEmailPasswordSignin = new cdk.CfnParameter(this, 'DisableEmailPasswordSignin', {
+      type: 'String',
+      default: 'false',
+      allowedValues: ['true', 'false'],
+      description:
+        'Set to true to turn off email/password sign-in, password resets and password changes, so people sign in with SSO only.',
+    });
+
+    const disableEmailPasswordSignup = new cdk.CfnParameter(this, 'DisableEmailPasswordSignup', {
+      type: 'String',
+      default: 'false',
+      allowedValues: ['true', 'false'],
+      description: 'Set to true to turn off email/password sign-up. SSO sign-up is unaffected.',
+    });
+
+    const disablePasskeySignin = new cdk.CfnParameter(this, 'DisablePasskeySignin', {
+      type: 'String',
+      default: 'false',
+      allowedValues: ['true', 'false'],
+      description: 'Set to true to turn off signing in with a passkey. Passkeys used to confirm a signature are unaffected.',
+    });
+
     // -- SMTP -------------------------------------------------------------
 
     const smtpFromAddress = new cdk.CfnParameter(this, 'SmtpFromAddress', {
@@ -198,6 +220,9 @@ export class GenericDocumensoStack extends cdk.Stack {
       smtpFromAddress: smtpFromAddress.valueAsString,
       allowedSignupDomains: allowedSignupDomains.valueAsString,
       microsoftTenantId: microsoftTenantId.valueAsString,
+      disableEmailPasswordSignin: disableEmailPasswordSignin.valueAsString,
+      disableEmailPasswordSignup: disableEmailPasswordSignup.valueAsString,
+      disablePasskeySignin: disablePasskeySignin.valueAsString,
       appConfigSecretArn: '',
       databaseUrlSecretArn: '',
       uploadsBucketName: '',
@@ -257,7 +282,12 @@ export class GenericDocumensoStack extends cdk.Stack {
           },
           {
             Label: { default: 'SSO (Microsoft)' },
-            Parameters: ['MicrosoftTenantId'],
+            Parameters: [
+              'MicrosoftTenantId',
+              'DisableEmailPasswordSignin',
+              'DisableEmailPasswordSignup',
+              'DisablePasskeySignin',
+            ],
           },
           {
             Label: { default: 'Signing' },

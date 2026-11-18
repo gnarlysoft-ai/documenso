@@ -104,8 +104,10 @@ export class Compute extends Construct {
 
     const logGroup = new logs.LogGroup(this, 'LogGroup', {
       logGroupName: `/documenso/${config.envName}`,
-      retention: logs.RetentionDays.TWO_WEEKS,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      // Never expire. Logs are evidence, and a stack update must not shorten
+      // retention that was raised outside the stack.
+      retention: logs.RetentionDays.INFINITE,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
     // -- Task Definition --------------------------------------------------
@@ -115,6 +117,11 @@ export class Compute extends Construct {
       memoryLimitMiB: config.fargateMemory,
       family: `documenso-${config.envName}`,
     });
+
+    // Keep old revisions when a stack update replaces the task definition
+    // (any env change registers a new revision). Without this, CloudFormation
+    // deregisters the previous revision during cleanup.
+    taskDef.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
 
     const containerImage = isInternal
       ? ecs.ContainerImage.fromEcrRepository(props.repo!, 'latest')
@@ -195,6 +202,9 @@ export class Compute extends Construct {
           : {}),
         NEXT_PRIVATE_MICROSOFT_TENANT_ID: config.microsoftTenantId,
         NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS: config.allowedSignupDomains,
+        NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNIN: config.disableEmailPasswordSignin,
+        NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNUP: config.disableEmailPasswordSignup,
+        NEXT_PUBLIC_DISABLE_PASSKEY_SIGNIN: config.disablePasskeySignin,
         NEXT_PRIVATE_JOBS_PROVIDER: 'local',
         DOCUMENSO_DISABLE_TELEMETRY: 'true',
       },

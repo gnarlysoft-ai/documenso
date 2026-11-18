@@ -106,3 +106,61 @@ export const isEmailDomainAllowedForSignup = (email: string): boolean => {
 
   return allowedDomains.includes(emailDomain);
 };
+
+/**
+ * Check if signup is enabled for the given provider.
+ * The master switch takes precedence over the per-provider flags.
+ *
+ * Backported from upstream documenso. In this fork only the 'email' provider
+ * is wired up (the /signup route).
+ */
+export const isSignupEnabledForProvider = (provider: 'email' | 'google' | 'microsoft' | 'oidc'): boolean => {
+  if (env('NEXT_PUBLIC_DISABLE_SIGNUP') === 'true') {
+    return false;
+  }
+
+  const flagMap = {
+    email: 'NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNUP',
+    google: 'NEXT_PUBLIC_DISABLE_GOOGLE_SIGNUP',
+    microsoft: 'NEXT_PUBLIC_DISABLE_MICROSOFT_SIGNUP',
+    oidc: 'NEXT_PUBLIC_DISABLE_OIDC_SIGNUP',
+  } as const;
+
+  return env(flagMap[provider]) !== 'true';
+};
+
+/**
+ * Check if signin is enabled for the given provider.
+ * The master switch takes precedence over the per-provider flags.
+ *
+ * Backported from upstream documenso (documenso/documenso#2857). In this fork
+ * only the 'email' provider is wired up: the email/password signin,
+ * update-password, forgot-password and reset-password routes.
+ */
+export const isSigninEnabledForProvider = (provider: 'email' | 'google' | 'microsoft' | 'oidc'): boolean => {
+  if (env('NEXT_PUBLIC_DISABLE_SIGNIN') === 'true') {
+    return false;
+  }
+
+  const flagMap = {
+    email: 'NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNIN',
+    google: 'NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN',
+    microsoft: 'NEXT_PUBLIC_DISABLE_MICROSOFT_SIGNIN',
+    oidc: 'NEXT_PUBLIC_DISABLE_OIDC_SIGNIN',
+  } as const;
+
+  return env(flagMap[provider]) !== 'true';
+};
+
+/**
+ * Fork-only: set NEXT_PUBLIC_DISABLE_PASSKEY_SIGNIN to "true" to refuse signing
+ * in with a passkey. Passkeys used to confirm a signature (recipient action
+ * auth) are not affected.
+ */
+export const isPasskeySigninEnabled = (): boolean => {
+  if (env('NEXT_PUBLIC_DISABLE_SIGNIN') === 'true') {
+    return false;
+  }
+
+  return env('NEXT_PUBLIC_DISABLE_PASSKEY_SIGNIN') !== 'true';
+};

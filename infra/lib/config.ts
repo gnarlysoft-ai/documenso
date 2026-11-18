@@ -90,6 +90,15 @@ export interface EnvironmentConfig {
   /** Microsoft/Entra tenant ID (empty = "common"). */
   readonly microsoftTenantId: string;
 
+  /** "true" turns off email/password sign-in, password resets and password changes. */
+  readonly disableEmailPasswordSignin: string;
+
+  /** "true" turns off email/password sign-up. SSO sign-up is unaffected. */
+  readonly disableEmailPasswordSignup: string;
+
+  /** "true" turns off passkey sign-in. Passkeys used to confirm a signature are unaffected. */
+  readonly disablePasskeySignin: string;
+
   // -- Secrets ----------------------------------------------------------
 
   /**
@@ -224,6 +233,9 @@ export function getInternalConfig(envName: string): EnvironmentConfig {
     smtpFromAddress: requireEnv('SMTP_FROM_ADDRESS'),
     allowedSignupDomains: optionalEnv('ALLOWED_SIGNUP_DOMAINS'),
     microsoftTenantId: optionalEnv('MICROSOFT_TENANT_ID'),
+    disableEmailPasswordSignin: optionalEnv('DISABLE_EMAIL_PASSWORD_SIGNIN', 'false'),
+    disableEmailPasswordSignup: optionalEnv('DISABLE_EMAIL_PASSWORD_SIGNUP', 'false'),
+    disablePasskeySignin: optionalEnv('DISABLE_PASSKEY_SIGNIN', 'false'),
     appConfigSecretArn: requireEnv('APP_CONFIG_SECRET_ARN'),
     databaseUrlSecretArn: requireEnv('DATABASE_URL_SECRET_ARN'),
     uploadsBucketName: optionalEnv('UPLOADS_BUCKET_NAME', `documenso-uploads-${envName}`),

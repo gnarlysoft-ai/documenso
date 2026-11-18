@@ -24,6 +24,9 @@ Metadata:
           default: SSO (Microsoft)
         Parameters:
           - MicrosoftTenantId
+          - DisableEmailPasswordSignin
+          - DisableEmailPasswordSignup
+          - DisablePasskeySignin
       - Label:
           default: Signing
         Parameters:
@@ -73,6 +76,27 @@ Parameters:
     Type: String
     Default: common
     Description: Microsoft/Entra tenant ID (or 'common' for multi-tenant). Used only if Microsoft SSO is configured.
+  DisableEmailPasswordSignin:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Set to true to turn off email/password sign-in, password resets and password changes, so people sign in with SSO only.
+  DisableEmailPasswordSignup:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Set to true to turn off email/password sign-up. SSO sign-up is unaffected.
+  DisablePasskeySignin:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Set to true to turn off signing in with a passkey. Passkeys used to confirm a signature are unaffected.
   SmtpFromAddress:
     Type: String
     Description: Email 'From' address. Must be verified at your SMTP provider (e.g. AWS SES).
@@ -395,8 +419,8 @@ Resources:
           Value: !Ref 'EnvName'
         - Key: project
           Value: documenso
-    UpdateReplacePolicy: Delete
-    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Database/Instance/Secret/Resource
   DatabaseInstanceSecretAttachmentFCA06D38:
@@ -445,8 +469,8 @@ Resources:
           Value: documenso
       VPCSecurityGroups:
         - !GetAtt 'NetworkingDbSg37EB0EE1.GroupId'
-    UpdateReplacePolicy: Snapshot
-    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Database/Instance/Resource
   SecretsAppConfig1DE8CB45:
@@ -469,8 +493,8 @@ Resources:
           Value: !Ref 'EnvName'
         - Key: project
           Value: documenso
-    UpdateReplacePolicy: Delete
-    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Secrets/AppConfig/Resource
   SecretsDatabaseUrlE7453004:
@@ -488,8 +512,8 @@ Resources:
           Value: !Ref 'EnvName'
         - Key: project
           Value: documenso
-    UpdateReplacePolicy: Delete
-    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Secrets/DatabaseUrl/Resource
   SigningKmsKeyDA4E7B7B:
@@ -609,14 +633,13 @@ Resources:
         - ''
         - - /documenso/
           - !Ref 'EnvName'
-      RetentionInDays: 14
       Tags:
         - Key: environment
           Value: !Ref 'EnvName'
         - Key: project
           Value: documenso
-    UpdateReplacePolicy: Delete
-    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Compute/LogGroup/Resource
   ComputeTaskDefTaskRole10B1918B:
@@ -714,6 +737,12 @@ Resources:
               Value: !Ref 'MicrosoftTenantId'
             - Name: NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS
               Value: !Ref 'AllowedSignupDomains'
+            - Name: NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNIN
+              Value: !Ref 'DisableEmailPasswordSignin'
+            - Name: NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNUP
+              Value: !Ref 'DisableEmailPasswordSignup'
+            - Name: NEXT_PUBLIC_DISABLE_PASSKEY_SIGNIN
+              Value: !Ref 'DisablePasskeySignin'
             - Name: NEXT_PRIVATE_JOBS_PROVIDER
               Value: local
             - Name: DOCUMENSO_DISABLE_TELEMETRY
@@ -832,6 +861,8 @@ Resources:
         - Key: project
           Value: documenso
       TaskRoleArn: !GetAtt 'ComputeTaskDefTaskRole10B1918B.Arn'
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Compute/TaskDef/Resource
   ComputeTaskDefExecutionRole781DCE1C:

@@ -79,6 +79,9 @@ CONTAINER_IMAGE=                   # filled in step 4
 MICROSOFT_TENANT_ID=common          # your Entra tenant ID, or 'common' for multi-tenant
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=
+DISABLE_EMAIL_PASSWORD_SIGNIN=false # true = SSO-only sign-in (also closes password resets and changes)
+DISABLE_EMAIL_PASSWORD_SIGNUP=false # true = no email/password sign-up (SSO sign-up still works)
+DISABLE_PASSKEY_SIGNIN=false        # true = no passkey sign-in (passkeys still confirm signatures)
 
 # SMTP (step 2e — required for signing invitations)
 SMTP_HOST=
@@ -99,6 +102,8 @@ FARGATE_CPU=512
 FARGATE_MEMORY=1024
 DESIRED_COUNT=1
 ```
+
+**SSO-only sign-in.** With `DISABLE_EMAIL_PASSWORD_SIGNIN=true` and `DISABLE_PASSKEY_SIGNIN=true`, SSO is the only way in. The break-glass is then no longer a stored password: an AWS admin sets `DisableEmailPasswordSignin` back to `false` with a stack update, which brings back password sign-in for accounts that have a password, and password resets. Changing these parameters replaces the task definition (a new revision); the old revision is kept (`Retain`).
 
 If `.deploy.env` exists, read it and ask whether to reuse or overwrite.
 
@@ -312,40 +317,24 @@ fi
   --resource-group "documenso-signing-$ENV_NAME" \
   --location "eastus" \
   --vault-name "<globally-unique-vault-name>" \
-  --key-name "documenso-signing-$ENV_NAME" \
+  --cert-name "documenso-cert" \
+  --cert-subject 'CN=Your Legal Entity, O=Your Legal Entity, OU=Documenso, C=US' \
+  --cert-email "admin@yourdomain.com" \
+  --csr-out ".deploy-artifacts/csr.pem" \
   --env-out .deploy.env
 ```
+
+The running Azure profile's service principal needs **Owner** (or equivalent) on the target subscription. The script grants itself **Key Vault Certificates Officer** on the new vault automatically, so this single role is enough; you do not need to pre-grant any data-plane roles. The "(Recommended)" conditional with the Owner role (excludes Owner/UAA/RBAC re-assignment) is fully compatible — Crypto User and Certificates Officer are not in the excluded set.
 
 The helper provisions (idempotent):
 - Resource group `documenso-signing-$ENV_NAME` in the chosen region
 - Key Vault Premium with RBAC + purge protection enabled
-- RSA-HSM 3072-bit non-exportable key (sign + verify only)
+- **Attested pending certificate** via Azure Key Vault Certificates API — creates the RSA-HSM 3072-bit non-exportable key and the PKCS#10 CSR in one atomic call
 - Service principal `documenso-signing-ecs-$ENV_NAME` with `Key Vault Crypto User` scoped to the one key
-- Appends `AZURE_KV_URL`, `AZURE_KV_TENANT_ID`, `AZURE_KV_CLIENT_ID`, `AZURE_KV_CLIENT_SECRET` to `.deploy.env`
+- Writes the CSR PEM to `--csr-out` (default `.deploy-artifacts/csr.pem`)
+- Appends `AZURE_KV_URL`, `AZURE_KV_KEY_NAME`, `AZURE_KV_TENANT_ID`, `AZURE_KV_CLIENT_ID`, `AZURE_KV_CLIENT_SECRET` to `.deploy.env`
 
-After provisioning, **prompt the deployer to visit the Azure portal once** to generate the attested CSR (Azure's CLI doesn't expose this yet — portal is the only way as of April 2026):
-
-```
-══════════════════════════════════════════════════════════════════════════
- ACTION REQUIRED — GENERATE ATTESTED CSR IN AZURE PORTAL
-══════════════════════════════════════════════════════════════════════════
-1. Open https://portal.azure.com → Key Vaults → <your vault> → Certificates
-2. Click "Generate/Import" → "Generate"
-3. Certificate Name: documenso-signing-$ENV_NAME
-4. Subject: CN=$SIGNING_CERT_CN, O=$SIGNING_CERT_O, OU=$SIGNING_CERT_OU,
-            emailAddress=$SIGNING_CERT_EMAIL, C=$SIGNING_CERT_COUNTRY
-5. Advanced Policy Configuration:
-   - Content Type: PEM
-   - Key Type: RSA-HSM
-   - Key Size: 3072
-   - Exportable Private Key: No
-   - Issuer: Self (CSR merge happens later)
-6. Create. Then click the pending cert → "Certificate Operation" → Download CSR
-7. Save as .deploy-artifacts/csr.pem
-══════════════════════════════════════════════════════════════════════════
-```
-
-Pause until the CSR file exists locally, then continue with Step 5. The CSR is what we'll submit to SSL.com in Step 7.
+No portal visit required for the CSR — it's saved to disk and ready to attach to the SSL.com order email in Step 7.
 
 ### Step 5 — Deploy the stack
 
@@ -362,6 +351,9 @@ PARAMS=(
   "AppName=$APP_NAME"
   "AllowedSignupDomains=$ALLOWED_SIGNUP_DOMAINS"
   "MicrosoftTenantId=$MICROSOFT_TENANT_ID"
+  "DisableEmailPasswordSignin=${DISABLE_EMAIL_PASSWORD_SIGNIN:-false}"
+  "DisableEmailPasswordSignup=${DISABLE_EMAIL_PASSWORD_SIGNUP:-false}"
+  "DisablePasskeySignin=${DISABLE_PASSKEY_SIGNIN:-false}"
   "SmtpFromAddress=$SMTP_FROM_ADDRESS"
   "SigningTransport=${SIGNING_TRANSPORT:-aws-kms}"
   "AzureKvUrl=${AZURE_KV_URL:-}"
