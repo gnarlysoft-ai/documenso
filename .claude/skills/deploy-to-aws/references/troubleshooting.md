@@ -197,9 +197,9 @@ Likely causes (in order of frequency):
 - Key type is `RSA` instead of `RSA-HSM`. Standard RSA keys don't carry the HSM attestation SSL.com needs. Use RSA-HSM (requires Premium SKU).
 - Subject DN missing required fields. SSL.com requires at minimum CN, O, C. Add OU + emailAddress for cleaner UX.
 
-**Azure portal "Generate CSR" button missing**
+**Azure portal "Generate CSR" button missing on an existing key**
 
-The key was created outside the Certificates API. Azure KV's CSR flow only works on certificates, not raw keys. Work around: create a new cert in the portal with the same subject, let it generate its own key (RSA-HSM 3072, non-exportable), then download the CSR. The old raw key you created via `setup-azure-kv.py` is now unused — delete or leave it.
+Azure KV's CSR flow operates on Certificates, not raw Keys. If you have only a key under that name, the cert flow can't bind a CSR to it. Current versions of `setup-azure-kv.py` use the Certificates API and avoid this entirely — pull the latest script and re-run. If you're on an older script that pre-created a raw key, the orphan key blocks reuse of the name for the full soft-delete-retention window (90 days with purge protection), so the practical fix is to pick a different `--cert-name` and let the script create the new attested cert under that name. Update `AZURE_KV_KEY_NAME` accordingly. The orphan raw key sits idle until its retention expires.
 
 **ECS task restart-looping after switching `SigningTransport` from aws-kms to azure-kv**
 

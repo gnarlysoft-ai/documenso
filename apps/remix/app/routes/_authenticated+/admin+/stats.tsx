@@ -31,11 +31,14 @@ import { MonthlyActiveUsersChart } from '~/components/general/admin-monthly-acti
 import { AdminStatsSignerConversionChart } from '~/components/general/admin-stats-signer-conversion-chart';
 import { AdminStatsUsersWithDocumentsChart } from '~/components/general/admin-stats-users-with-documents';
 import { CardMetric } from '~/components/general/metric-card';
+import { requireAdmin } from '~/utils/require-admin.server';
 
 import { version } from '../../../../package.json';
 import type { Route } from './+types/stats';
 
-export async function loader() {
+export async function loader({ request }: Route.LoaderArgs) {
+  await requireAdmin(request);
+
   const [
     usersCount,
     organisationsWithSubscriptionsCount,

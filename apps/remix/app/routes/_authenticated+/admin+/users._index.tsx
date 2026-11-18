@@ -3,10 +3,13 @@ import { Trans } from '@lingui/react/macro';
 import { findUsers } from '@documenso/lib/server-only/user/get-all-users';
 
 import { AdminDashboardUsersTable } from '~/components/tables/admin-dashboard-users-table';
+import { requireAdmin } from '~/utils/require-admin.server';
 
 import type { Route } from './+types/users._index';
 
 export async function loader({ request }: Route.LoaderArgs) {
+  await requireAdmin(request);
+
   const url = new URL(request.url);
 
   const page = Number(url.searchParams.get('page')) || 1;

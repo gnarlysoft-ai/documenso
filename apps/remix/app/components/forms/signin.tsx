@@ -100,6 +100,7 @@ export const SignInForm = ({
   >('totp');
 
   const hasSocialAuthEnabled = isGoogleSSOEnabled || isMicrosoftSSOEnabled || isOIDCSSOEnabled;
+  const microsoftOnly = Boolean(isMicrosoftSSOEnabled);
 
   const [isPasskeyLoading, setIsPasskeyLoading] = useState(false);
 
@@ -333,63 +334,69 @@ export const SignInForm = ({
           className="flex w-full flex-col gap-y-4"
           disabled={isSubmitting || isPasskeyLoading}
         >
-          <FormField
-            control={form.control}
-            name="email"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  <Trans>Email</Trans>
-                </FormLabel>
+          {!microsoftOnly && (
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <Trans>Email</Trans>
+                  </FormLabel>
 
-                <FormControl>
-                  <Input type="email" {...field} />
-                </FormControl>
+                  <FormControl>
+                    <Input type="email" {...field} />
+                  </FormControl>
 
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
-          <FormField
-            control={form.control}
-            name="password"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  <Trans>Password</Trans>
-                </FormLabel>
+          {!microsoftOnly && (
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <Trans>Password</Trans>
+                  </FormLabel>
 
-                <FormControl>
-                  <PasswordInput {...field} />
-                </FormControl>
+                  <FormControl>
+                    <PasswordInput {...field} />
+                  </FormControl>
 
-                <FormMessage />
+                  <FormMessage />
 
-                <p className="mt-2 text-right">
-                  <Link
-                    to="/forgot-password"
-                    className="text-sm text-muted-foreground duration-200 hover:opacity-70"
-                  >
-                    <Trans>Forgot your password?</Trans>
-                  </Link>
-                </p>
-              </FormItem>
-            )}
-          />
+                  <p className="mt-2 text-right">
+                    <Link
+                      to="/forgot-password"
+                      className="text-sm text-muted-foreground duration-200 hover:opacity-70"
+                    >
+                      <Trans>Forgot your password?</Trans>
+                    </Link>
+                  </p>
+                </FormItem>
+              )}
+            />
+          )}
 
-          <Button
-            type="submit"
-            size="lg"
-            loading={isSubmitting}
-            className="dark:bg-documenso dark:hover:opacity-90"
-          >
-            {isSubmitting ? <Trans>Signing in...</Trans> : <Trans>Sign In</Trans>}
-          </Button>
+          {!microsoftOnly && (
+            <Button
+              type="submit"
+              size="lg"
+              loading={isSubmitting}
+              className="dark:bg-documenso dark:hover:opacity-90"
+            >
+              {isSubmitting ? <Trans>Signing in...</Trans> : <Trans>Sign In</Trans>}
+            </Button>
+          )}
 
           {!isEmbeddedRedirect && (
             <>
-              {hasSocialAuthEnabled && (
+              {!microsoftOnly && hasSocialAuthEnabled && (
                 <div className="relative flex items-center justify-center gap-x-4 py-2 text-xs uppercase">
                   <div className="h-px flex-1 bg-border" />
                   <span className="bg-transparent text-muted-foreground">
@@ -399,7 +406,7 @@ export const SignInForm = ({
                 </div>
               )}
 
-              {isGoogleSSOEnabled && (
+              {!microsoftOnly && isGoogleSSOEnabled && (
                 <Button
                   type="button"
                   size="lg"
@@ -427,11 +434,11 @@ export const SignInForm = ({
                     alt="Microsoft Logo"
                     src={'/static/microsoft.svg'}
                   />
-                  Microsoft
+                  <Trans>Sign In with Microsoft</Trans>
                 </Button>
               )}
 
-              {isOIDCSSOEnabled && (
+              {!microsoftOnly && isOIDCSSOEnabled && (
                 <Button
                   type="button"
                   size="lg"
@@ -447,18 +454,20 @@ export const SignInForm = ({
             </>
           )}
 
-          <Button
-            type="button"
-            size="lg"
-            variant="outline"
-            disabled={isSubmitting}
-            loading={isPasskeyLoading}
-            className="border bg-background text-muted-foreground"
-            onClick={onSignInWithPasskey}
-          >
-            {!isPasskeyLoading && <KeyRoundIcon className="-ml-1 mr-1 h-5 w-5" />}
-            <Trans>Passkey</Trans>
-          </Button>
+          {!microsoftOnly && (
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              disabled={isSubmitting}
+              loading={isPasskeyLoading}
+              className="border bg-background text-muted-foreground"
+              onClick={onSignInWithPasskey}
+            >
+              {!isPasskeyLoading && <KeyRoundIcon className="-ml-1 mr-1 h-5 w-5" />}
+              <Trans>Passkey</Trans>
+            </Button>
+          )}
         </fieldset>
       </form>
 

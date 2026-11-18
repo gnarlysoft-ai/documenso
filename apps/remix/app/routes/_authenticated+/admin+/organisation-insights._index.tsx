@@ -8,10 +8,13 @@ import {
   AdminOrganisationOverviewTable,
   type OrganisationOverview,
 } from '~/components/tables/admin-organisation-overview-table';
+import { requireAdmin } from '~/utils/require-admin.server';
 
 import type { Route } from './+types/organisation-insights._index';
 
 export async function loader({ request }: Route.LoaderArgs) {
+  await requireAdmin(request);
+
   const url = new URL(request.url);
 
   const rawSortBy = url.searchParams.get('sortBy') || 'signingVolume';

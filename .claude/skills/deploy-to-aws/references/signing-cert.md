@@ -73,57 +73,70 @@ Budget: 1-2 business days setup + 3-10 business days for OV validation. Total ~$
 - Verifiable business phone number (must appear in public directory — Google Business, D-U-N-S, legal filing)
 - Corporate officer's name + government-issued photo ID scan
 
-### Step 1: Provision Azure Key Vault Premium
+### Steps 1–3: Provision vault + cert + CSR in one shot
 
-The skill's `scripts/setup-azure-kv.py` does this via ARM API. Manual equivalent:
+The skill's `scripts/setup-azure-kv.py` does the resource group, Key Vault Premium, attested cert (RSA-HSM 3072 non-exportable, sign + verify), CSR, service principal, and Crypto User role assignment in a single end-to-end run. It writes the CSR to `--csr-out` ready for SSL.com.
 
 ```bash
-# Create resource group
-az group create -n documenso-signing-prod -l eastus
-
-# Create Key Vault Premium (NOT Standard — must be Premium for HSM-backed keys)
-az keyvault create -n <your-vault-name> -g documenso-signing-prod \
-  --sku premium \
-  --enable-rbac-authorization true \
-  --enable-purge-protection true
-
-# Create the signing key: RSA-HSM, 3072-bit, non-exportable, sign-only
-az keyvault key create --vault-name <your-vault-name> \
-  --name documenso-signing-prod \
-  --kty RSA-HSM \
-  --size 3072 \
-  --ops sign verify \
-  --not-before "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+python .claude/skills/deploy-to-aws/scripts/setup-azure-kv.py \
+  --profile <azure-auth-profile> \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
+  --resource-group documenso-signing-prod \
+  --location eastus \
+  --vault-name <globally-unique-name> \
+  --cert-name documenso-cert \
+  --cert-subject 'CN=Your Legal Entity (or verified DBA), O=Your Legal Entity, OU=Documenso, C=US' \
+  --cert-email officer@yourdomain.com \
+  --csr-out .deploy-artifacts/csr.pem \
+  --env-out .deploy.env
 ```
 
-### Step 2: Create a service principal for ECS → Azure auth
+Requirements on the running profile:
+
+- **Owner** (or equivalent) on the target subscription. The script self-grants Key Vault Certificates Officer on the new vault before calling the cert API, so no pre-existing data-plane access is required.
+- If your Owner assignment uses the "Recommended" conditional (Owner/UAA/RBAC excluded), that's fine — Crypto User and Certificates Officer are not in the excluded set.
+
+Manual equivalent if you can't run the script:
 
 ```bash
-# Create SP with Key Vault Crypto User role scoped to just the one key
+# Resource group + vault
+az group create -n documenso-signing-prod -l eastus
+az keyvault create -n <vault> -g documenso-signing-prod \
+  --sku premium --enable-rbac-authorization true --enable-purge-protection true
+
+# Grant yourself Certificates Officer on the new vault (one-time, ~30s propagation)
+az role assignment create --role "Key Vault Certificates Officer" \
+  --assignee <your-oid> --scope "/subscriptions/<sub>/resourceGroups/documenso-signing-prod/providers/Microsoft.KeyVault/vaults/<vault>"
+
+# Create the attested pending cert. This atomically creates the RSA-HSM key
+# and the pending cert; you cannot pre-create the key separately or you'll
+# collide with the cert API (and purge protection blocks reuse for 90 days).
+az keyvault certificate create --vault-name <vault> -n documenso-cert \
+  --policy "$(cat <<'JSON'
+{ "keyProperties": {"keyType":"RSA-HSM","keySize":3072,"exportable":false,"reuseKey":false},
+  "secretProperties": {"contentType":"application/x-pem-file"},
+  "x509CertificateProperties": {
+    "subject":"CN=Your Legal Entity, O=Your Legal Entity, OU=Documenso, C=US",
+    "ekus":["1.3.6.1.5.5.7.3.36"],
+    "keyUsage":["digitalSignature","nonRepudiation"],
+    "validityInMonths":12 },
+  "issuerParameters": {"name":"Unknown"}}
+JSON
+)"
+
+# Download the CSR
+az keyvault certificate pending show --vault-name <vault> -n documenso-cert \
+  --query csr -o tsv | fold -w 64 | \
+  ( echo "-----BEGIN CERTIFICATE REQUEST-----"; cat; echo "-----END CERTIFICATE REQUEST-----" ) \
+  > .deploy-artifacts/csr.pem
+
+# Create the ECS service principal with Crypto User scoped to the cert's key
 az ad sp create-for-rbac --name documenso-signing-ecs \
   --role "Key Vault Crypto User" \
-  --scopes "/subscriptions/<sub-id>/resourceGroups/documenso-signing-prod/providers/Microsoft.KeyVault/vaults/<vault-name>/keys/documenso-signing-prod"
-# Outputs appId (= clientId), password (= clientSecret), tenant (= tenantId)
+  --scopes "/subscriptions/<sub>/resourceGroups/documenso-signing-prod/providers/Microsoft.KeyVault/vaults/<vault>/keys/documenso-cert"
 ```
 
-Save these three values — they're needed in Step 6.
-
-### Step 3: Generate the CSR + attestation via the Azure portal
-
-The portal is the ONLY way to generate an attested CSR as of April 2026 (Azure doesn't expose this via CLI yet).
-
-1. Azure portal → your vault → **Certificates** → **Generate/Import** → **Generate**.
-2. Certificate name: `documenso-signing-prod` (can match the key name).
-3. Subject: `CN=<Your Company>, O=<Your Company>, OU=Documenso, emailAddress=<officer>@<yourdomain>, C=<US|CA|...>`
-4. **Advanced Policy Configuration** →
-   - Content Type: **PEM**
-   - Key Type: **RSA-HSM** (critical)
-   - Key Size: **3072**
-   - Exportable Private Key: **No** (critical)
-   - Lifetime validity: 1 year
-   - Issuer: **Self-signed** for now — SSL.com re-signs later via CSR merge
-5. Create. The portal shows "In progress (issuer is unknown)".
-6. Click the pending cert → **Certificate Operation** → **Download CSR**. Save as `csr.pem`.
+Important: the cert name **is** the key name in Azure KV — they share the same logical entity. Don't try to create the key separately; the Certificates API owns it.
 
 ### Step 4: Order the cert at SSL.com
 

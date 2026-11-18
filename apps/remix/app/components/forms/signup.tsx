@@ -90,6 +90,7 @@ export const SignUpForm = ({
   const utmSrc = searchParams.get('utm_source') ?? null;
 
   const hasSocialAuthEnabled = isGoogleSSOEnabled || isMicrosoftSSOEnabled || isOIDCSSOEnabled;
+  const microsoftOnly = Boolean(isMicrosoftSSOEnabled);
 
   const form = useForm<TSignUpFormSchema>({
     values: {
@@ -248,83 +249,91 @@ export const SignUpForm = ({
           >
             <fieldset
               className={cn(
-                'flex h-[550px] w-full flex-col gap-y-4',
-                hasSocialAuthEnabled && 'h-[650px]',
+                'flex w-full flex-col gap-y-4',
+                !microsoftOnly && (hasSocialAuthEnabled ? 'h-[650px]' : 'h-[550px]'),
               )}
               disabled={isSubmitting}
             >
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <Trans>Full Name</Trans>
-                    </FormLabel>
-                    <FormControl>
-                      <Input type="text" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!microsoftOnly && (
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <Trans>Full Name</Trans>
+                      </FormLabel>
+                      <FormControl>
+                        <Input type="text" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <Trans>Email Address</Trans>
-                    </FormLabel>
-                    <FormControl>
-                      <Input type="email" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!microsoftOnly && (
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <Trans>Email Address</Trans>
+                      </FormLabel>
+                      <FormControl>
+                        <Input type="email" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <Trans>Password</Trans>
-                    </FormLabel>
+              {!microsoftOnly && (
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <Trans>Password</Trans>
+                      </FormLabel>
 
-                    <FormControl>
-                      <PasswordInput {...field} />
-                    </FormControl>
+                      <FormControl>
+                        <PasswordInput {...field} />
+                      </FormControl>
 
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
-              <FormField
-                control={form.control}
-                name="signature"
-                render={({ field: { onChange, value } }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <Trans>Sign Here</Trans>
-                    </FormLabel>
-                    <FormControl>
-                      <SignaturePadDialog
-                        disabled={isSubmitting}
-                        value={value}
-                        onChange={(v) => onChange(v ?? '')}
-                      />
-                    </FormControl>
+              {!microsoftOnly && (
+                <FormField
+                  control={form.control}
+                  name="signature"
+                  render={({ field: { onChange, value } }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <Trans>Sign Here</Trans>
+                      </FormLabel>
+                      <FormControl>
+                        <SignaturePadDialog
+                          disabled={isSubmitting}
+                          value={value}
+                          onChange={(v) => onChange(v ?? '')}
+                        />
+                      </FormControl>
 
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
-              {hasSocialAuthEnabled && (
+              {!microsoftOnly && hasSocialAuthEnabled && (
                 <div className="relative flex items-center justify-center gap-x-4 py-2 text-xs uppercase">
                   <div className="h-px flex-1 bg-border" />
                   <span className="bg-transparent text-muted-foreground">
@@ -334,7 +343,7 @@ export const SignUpForm = ({
                 </div>
               )}
 
-              {isGoogleSSOEnabled && (
+              {!microsoftOnly && isGoogleSSOEnabled && (
                 <Button
                   type="button"
                   size="lg"
@@ -366,7 +375,7 @@ export const SignUpForm = ({
                 </Button>
               )}
 
-              {isOIDCSSOEnabled && (
+              {!microsoftOnly && isOIDCSSOEnabled && (
                 <Button
                   type="button"
                   size="lg"
@@ -390,14 +399,16 @@ export const SignUpForm = ({
               </p>
             </fieldset>
 
-            <Button
-              loading={form.formState.isSubmitting}
-              type="submit"
-              size="lg"
-              className="mt-6 w-full"
-            >
-              <Trans>Create account</Trans>
-            </Button>
+            {!microsoftOnly && (
+              <Button
+                loading={form.formState.isSubmitting}
+                type="submit"
+                size="lg"
+                className="mt-6 w-full"
+              >
+                <Trans>Create account</Trans>
+              </Button>
+            )}
           </form>
         </Form>
         <p className="mt-6 text-xs text-muted-foreground">
