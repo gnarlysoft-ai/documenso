@@ -104,7 +104,9 @@ export class Compute extends Construct {
 
     const logGroup = new logs.LogGroup(this, 'LogGroup', {
       logGroupName: `/documenso/${config.envName}`,
-      retention: logs.RetentionDays.TWO_WEEKS,
+      // Never expire. Logs are evidence, and a stack update must not shorten
+      // retention that was raised outside the stack.
+      retention: logs.RetentionDays.INFINITE,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 

@@ -633,7 +633,6 @@ Resources:
         - ''
         - - /documenso/
           - !Ref 'EnvName'
-      RetentionInDays: 14
       Tags:
         - Key: environment
           Value: !Ref 'EnvName'
