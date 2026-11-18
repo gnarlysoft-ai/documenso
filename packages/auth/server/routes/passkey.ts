@@ -5,6 +5,7 @@ import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
+import { isPasskeySigninEnabled } from '@documenso/lib/constants/auth';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { rateLimitResponse } from '@documenso/lib/server-only/rate-limit/rate-limit-middleware';
 import { passkeyRateLimit } from '@documenso/lib/server-only/rate-limit/rate-limits';
@@ -15,6 +16,7 @@ import { ZAuthenticationResponseJSONSchema } from '@documenso/lib/types/webauthn
 import { getAuthenticatorOptions } from '@documenso/lib/utils/authenticator';
 import { prisma } from '@documenso/prisma';
 
+import { AuthenticationErrorCode } from '../lib/errors/error-codes';
 import { onAuthorize } from '../lib/utils/authorizer';
 import type { HonoAuthContext } from '../types/context';
 import { ZPasskeyAuthorizeSchema } from '../types/passkey';
@@ -25,6 +27,12 @@ export const passkeyRoute = new Hono<HonoAuthContext>()
    */
   .post('/authorize', sValidator('json', ZPasskeyAuthorizeSchema), async (c) => {
     const requestMetadata = c.get('requestMetadata');
+
+    if (!isPasskeySigninEnabled()) {
+      throw new AppError(AuthenticationErrorCode.SigninDisabled, {
+        statusCode: 400,
+      });
+    }
 
     const passkeyLimitResult = await passkeyRateLimit.check({
       ip: requestMetadata.ipAddress ?? 'unknown',

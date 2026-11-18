@@ -6,7 +6,11 @@ import { HTTPException } from 'hono/http-exception';
 import { DateTime } from 'luxon';
 import { z } from 'zod';
 
-import { isEmailDomainAllowedForSignup } from '@documenso/lib/constants/auth';
+import {
+  isEmailDomainAllowedForSignup,
+  isSigninEnabledForProvider,
+  isSignupEnabledForProvider,
+} from '@documenso/lib/constants/auth';
 import { EMAIL_VERIFICATION_STATE } from '@documenso/lib/constants/email';
 import { AppError } from '@documenso/lib/errors/app-error';
 import { jobsClient } from '@documenso/lib/jobs/client';
@@ -34,7 +38,6 @@ import { deletedServiceAccountEmail } from '@documenso/lib/server-only/user/serv
 import { legacyServiceAccountEmail } from '@documenso/lib/server-only/user/service-accounts/legacy-service-account';
 import { updatePassword } from '@documenso/lib/server-only/user/update-password';
 import { verifyEmail } from '@documenso/lib/server-only/user/verify-email';
-import { env } from '@documenso/lib/utils/env';
 import { prisma } from '@documenso/prisma';
 
 import { AuthenticationErrorCode } from '../lib/errors/error-codes';
@@ -59,6 +62,12 @@ export const emailPasswordRoute = new Hono<HonoAuthContext>()
    */
   .post('/authorize', sValidator('json', ZSignInSchema), async (c) => {
     const requestMetadata = c.get('requestMetadata');
+
+    if (!isSigninEnabledForProvider('email')) {
+      throw new AppError(AuthenticationErrorCode.SigninDisabled, {
+        statusCode: 400,
+      });
+    }
 
     const { email, password, totpCode, backupCode, csrfToken } = c.req.valid('json');
 
@@ -182,7 +191,7 @@ export const emailPasswordRoute = new Hono<HonoAuthContext>()
   .post('/signup', sValidator('json', ZSignUpSchema), async (c) => {
     const requestMetadata = c.get('requestMetadata');
 
-    if (env('NEXT_PUBLIC_DISABLE_SIGNUP') === 'true') {
+    if (!isSignupEnabledForProvider('email')) {
       throw new AppError(AuthenticationErrorCode.SignupDisabled, {
         statusCode: 400,
       });
@@ -228,6 +237,12 @@ export const emailPasswordRoute = new Hono<HonoAuthContext>()
   .post('/update-password', sValidator('json', ZUpdatePasswordSchema), async (c) => {
     const { password, currentPassword } = c.req.valid('json');
     const requestMetadata = c.get('requestMetadata');
+
+    if (!isSigninEnabledForProvider('email')) {
+      throw new AppError(AuthenticationErrorCode.SigninDisabled, {
+        statusCode: 400,
+      });
+    }
 
     const { session, user } = await getSession(c);
 
@@ -286,8 +301,13 @@ export const emailPasswordRoute = new Hono<HonoAuthContext>()
 
     const { state, userId } = await verifyEmail({ token });
 
-    // If email is verified, automatically authenticate user.
-    if (state === EMAIL_VERIFICATION_STATE.VERIFIED && userId !== null) {
+    // If email is verified, automatically authenticate user. Not when email/password
+    // signin is disabled: then the user signs in with an enabled provider instead.
+    if (
+      state === EMAIL_VERIFICATION_STATE.VERIFIED &&
+      userId !== null &&
+      isSigninEnabledForProvider('email')
+    ) {
       await onAuthorize({ userId }, c);
     }
 
@@ -331,6 +351,12 @@ export const emailPasswordRoute = new Hono<HonoAuthContext>()
   .post('/forgot-password', sValidator('json', ZForgotPasswordSchema), async (c) => {
     const requestMetadata = c.get('requestMetadata');
 
+    if (!isSigninEnabledForProvider('email')) {
+      throw new AppError(AuthenticationErrorCode.SigninDisabled, {
+        statusCode: 400,
+      });
+    }
+
     const { email } = c.req.valid('json');
 
     const forgotLimitResult = await forgotPasswordRateLimit.check({
@@ -364,6 +390,12 @@ export const emailPasswordRoute = new Hono<HonoAuthContext>()
    */
   .post('/reset-password', sValidator('json', ZResetPasswordSchema), async (c) => {
     const requestMetadata = c.get('requestMetadata');
+
+    if (!isSigninEnabledForProvider('email')) {
+      throw new AppError(AuthenticationErrorCode.SigninDisabled, {
+        statusCode: 400,
+      });
+    }
 
     const { token, password } = c.req.valid('json');
 
