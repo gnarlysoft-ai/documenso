@@ -1,6 +1,12 @@
 import { redirect } from 'react-router';
 
-export function loader() {
+import { requireAdmin } from '~/utils/require-admin.server';
+
+import type { Route } from './+types/_index';
+
+export async function loader({ request }: Route.LoaderArgs) {
+  await requireAdmin(request);
+
   throw redirect('/admin/stats');
 }
 

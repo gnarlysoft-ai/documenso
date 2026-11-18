@@ -49,10 +49,13 @@ import { DetailsCard, DetailsValue } from '~/components/general/admin-details';
 import { AdminGlobalSettingsSection } from '~/components/general/admin-global-settings-section';
 import { GenericErrorLayout } from '~/components/general/generic-error-layout';
 import { SettingsHeader } from '~/components/general/settings-header';
+import { requireAdmin } from '~/utils/require-admin.server';
 
 import type { Route } from './+types/organisations.$id';
 
-export async function loader() {
+export async function loader({ request }: Route.LoaderArgs) {
+  await requireAdmin(request);
+
   const licenseData = await LicenseClient.getInstance()?.getCachedLicense();
 
   return {

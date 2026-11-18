@@ -7,10 +7,13 @@ import { getAdminOrganisation } from '@documenso/trpc/server/admin-router/get-ad
 import { Button } from '@documenso/ui/primitives/button';
 
 import { OrganisationInsightsTable } from '~/components/tables/organisation-insights-table';
+import { requireAdmin } from '~/utils/require-admin.server';
 
 import type { Route } from './+types/organisation-insights.$id';
 
 export async function loader({ params, request }: Route.LoaderArgs) {
+  await requireAdmin(request);
+
   const { id } = params;
   const url = new URL(request.url);
 

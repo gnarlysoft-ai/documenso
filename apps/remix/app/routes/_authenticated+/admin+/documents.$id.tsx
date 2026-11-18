@@ -33,10 +33,13 @@ import { DocumentStatus } from '~/components/general/document/document-status';
 import { AdminDocumentJobsTable } from '~/components/tables/admin-document-jobs-table';
 import { AdminDocumentLogsTable } from '~/components/tables/admin-document-logs-table';
 import { AdminDocumentRecipientItemTable } from '~/components/tables/admin-document-recipient-item-table';
+import { requireAdmin } from '~/utils/require-admin.server';
 
 import type { Route } from './+types/documents.$id';
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
+  await requireAdmin(request);
+
   const id = params.id;
 
   if (!id || !id.startsWith('envelope_')) {
