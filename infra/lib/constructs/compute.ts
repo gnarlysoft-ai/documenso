@@ -105,7 +105,7 @@ export class Compute extends Construct {
     const logGroup = new logs.LogGroup(this, 'LogGroup', {
       logGroupName: `/documenso/${config.envName}`,
       retention: logs.RetentionDays.TWO_WEEKS,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
     // -- Task Definition --------------------------------------------------

@@ -42,6 +42,7 @@ export class Secrets extends Construct {
     } else {
       this.appConfig = new secretsmanager.Secret(this, 'AppConfig', {
         secretName: `documenso/${config.envName}/app-config`,
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
         description:
           'Documenso app secrets (NEXTAUTH_SECRET, encryption keys, SSO, SMTP, signing cert). ' +
           'Auto-generated placeholder values — update after deploy.',
@@ -70,6 +71,7 @@ export class Secrets extends Construct {
 
       this.databaseUrl = new secretsmanager.Secret(this, 'DatabaseUrl', {
         secretName: `documenso/${config.envName}/database-url`,
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
         description:
           'Documenso DATABASE_URL secret — populated by the skill after RDS endpoint is known.',
         secretStringValue: cdk.SecretValue.unsafePlainText(

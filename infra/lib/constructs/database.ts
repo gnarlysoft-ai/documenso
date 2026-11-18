@@ -76,7 +76,9 @@ export class Database extends Construct {
       ...(config.mode === 'internal' ? { maxAllocatedStorage: config.dbStorageGb * 2 } : {}),
 
       instanceIdentifier: `documenso-db-${config.envName}`,
-      removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
+      // Retain, not snapshot-then-delete: a stack delete or replacement must
+      // never remove the database itself.
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
       deletionProtection: config.envName === 'prod',
 
       backupRetention: cdk.Duration.days(config.envName === 'prod' ? 14 : 3),
@@ -85,6 +87,15 @@ export class Database extends Construct {
 
       publiclyAccessible: true,
     });
+
+    // Keep the generated credentials secret if the stack is deleted or the
+    // secret is replaced. `instance.secret` is the target attachment, so reach
+    // the generated DatabaseSecret construct itself.
+    const generatedSecret = this.instance.node.tryFindChild('Secret');
+    if (!(generatedSecret instanceof cdk.Resource)) {
+      throw new Error('Database: generated credentials secret not found');
+    }
+    generatedSecret.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
 
     this.dbSecret = this.instance.secret!;
     this.dbEndpoint = this.instance.dbInstanceEndpointAddress;

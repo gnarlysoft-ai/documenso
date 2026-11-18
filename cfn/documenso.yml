@@ -419,8 +419,8 @@ Resources:
           Value: !Ref 'EnvName'
         - Key: project
           Value: documenso
-    UpdateReplacePolicy: Delete
-    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Database/Instance/Secret/Resource
   DatabaseInstanceSecretAttachmentFCA06D38:
@@ -469,8 +469,8 @@ Resources:
           Value: documenso
       VPCSecurityGroups:
         - !GetAtt 'NetworkingDbSg37EB0EE1.GroupId'
-    UpdateReplacePolicy: Snapshot
-    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Database/Instance/Resource
   SecretsAppConfig1DE8CB45:
@@ -493,8 +493,8 @@ Resources:
           Value: !Ref 'EnvName'
         - Key: project
           Value: documenso
-    UpdateReplacePolicy: Delete
-    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Secrets/AppConfig/Resource
   SecretsDatabaseUrlE7453004:
@@ -512,8 +512,8 @@ Resources:
           Value: !Ref 'EnvName'
         - Key: project
           Value: documenso
-    UpdateReplacePolicy: Delete
-    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Secrets/DatabaseUrl/Resource
   SigningKmsKeyDA4E7B7B:
@@ -639,8 +639,8 @@ Resources:
           Value: !Ref 'EnvName'
         - Key: project
           Value: documenso
-    UpdateReplacePolicy: Delete
-    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Metadata:
       aws:cdk:path: Documenso/Compute/LogGroup/Resource
   ComputeTaskDefTaskRole10B1918B:

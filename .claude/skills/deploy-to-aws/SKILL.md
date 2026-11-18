@@ -103,6 +103,8 @@ FARGATE_MEMORY=1024
 DESIRED_COUNT=1
 ```
 
+**SSO-only sign-in.** With `DISABLE_EMAIL_PASSWORD_SIGNIN=true` and `DISABLE_PASSKEY_SIGNIN=true`, SSO is the only way in. The break-glass is then no longer a stored password: an AWS admin sets `DisableEmailPasswordSignin` back to `false` with a stack update, which brings back password sign-in for accounts that have a password, and password resets. Changing these parameters replaces the task definition (a new revision); the old revision is kept (`Retain`).
+
 If `.deploy.env` exists, read it and ask whether to reuse or overwrite.
 
 #### 2a. Network discovery
