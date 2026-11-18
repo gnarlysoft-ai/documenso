@@ -79,6 +79,9 @@ CONTAINER_IMAGE=                   # filled in step 4
 MICROSOFT_TENANT_ID=common          # your Entra tenant ID, or 'common' for multi-tenant
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=
+DISABLE_EMAIL_PASSWORD_SIGNIN=false # true = SSO-only sign-in (also closes password resets and changes)
+DISABLE_EMAIL_PASSWORD_SIGNUP=false # true = no email/password sign-up (SSO sign-up still works)
+DISABLE_PASSKEY_SIGNIN=false        # true = no passkey sign-in (passkeys still confirm signatures)
 
 # SMTP (step 2e — required for signing invitations)
 SMTP_HOST=
@@ -346,6 +349,9 @@ PARAMS=(
   "AppName=$APP_NAME"
   "AllowedSignupDomains=$ALLOWED_SIGNUP_DOMAINS"
   "MicrosoftTenantId=$MICROSOFT_TENANT_ID"
+  "DisableEmailPasswordSignin=${DISABLE_EMAIL_PASSWORD_SIGNIN:-false}"
+  "DisableEmailPasswordSignup=${DISABLE_EMAIL_PASSWORD_SIGNUP:-false}"
+  "DisablePasskeySignin=${DISABLE_PASSKEY_SIGNIN:-false}"
   "SmtpFromAddress=$SMTP_FROM_ADDRESS"
   "SigningTransport=${SIGNING_TRANSPORT:-aws-kms}"
   "AzureKvUrl=${AZURE_KV_URL:-}"
